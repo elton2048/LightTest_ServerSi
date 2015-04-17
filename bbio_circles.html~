@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+
+<!--
+	A client-side application which makes use of Backbone.js and Backbone.iobind for synchronizing with a back-end server running on Node.js
+	This makes use of EaselJS for drawing graphics elements
+!-->
+
+<head>
+	<script src="/bower_components/underscore/underscore.js"> </script>
+	<script src="/bower_components/backbone/backbone.js"> </script>
+	<script src="/bower_components/jquery/dist/jquery.min.js"> </script>
+	<script src="/bower_components/backbone.iobind/dist/backbone.iobind.min.js"> </script>
+	<script src="/bower_components/backbone.iobind/dist/backbone.iosync.min.js"> </script>
+	<script src="/socket.io/socket.io.js"></script>
+	<script src="/bower_components/easeljs/lib/easeljs-0.8.0.min.js"></script>
+	
+
+</head>
+
+<body>
+
+	<canvas id="CirclesCanvas" width="1000" height="800" style="background-color: #333333;">
+		alternate content
+	</canvas>
+	
+	
+	<script>
+		var app={  models:{}, collections:{}, views: {}	};
+		var server_error_status=false;
+		var one_circle, view;
+		var stage = new createjs.Stage("CirclesCanvas");
+		
+		
+		
+		//	create a background
+		var background_graphics = new createjs.Graphics().beginFill("#000000")
+			.drawRect(0,0,$("#CirclesCanvas").width(),$("#CirclesCanvas").height());
+		var background = new createjs.Shape(background_graphics);
+		stage.addChild(background);
+		
+		//create a rubbish bin for deleting circles, on the lower right corner of the stage
+		var rubbishbin_graphics = new createjs.Graphics().beginFill("#EE6363")
+			.drawRect(465,50,70,40);
+		var rubbishbin = new createjs.Shape(rubbishbin_graphics);
+		stage.addChild(rubbishbin);
+		
+		
+		$(document).keypress(function(event){
+		
+			var playerid = 0;
+			var wallindex = 0;
+			var tempwall = new Array();	
+			var hitornot = 0;
+			var player;
+			for(var i=0;i<app.circles.models.length;i++)
+			{
+				if(app.circles.models[i].attributes.type=="Player")
+				{
+					playerid = i;
+					player = app.circles.models[i];
+				}
+			}
+			for(var i=0;i<app.circles.models.length;i++)
+			{
+				if(app.circles.models[i].attributes.type=="Wall")
+				{
+					tempwall[wallindex]= new createjs.Graphics().beginFill("#EE6363")
+					.drawRect(app.circles.models[i].attributes.pos_x,app.circles.models[i].attributes.pos_y,
+					app.circles.models[i].attributes.width,app.circles.models[i].attributes.height);
+					tempwall[wallindex] = new createjs.Shape(tempwall[wallindex]);
+					wallindex++;
+				}
+			}
+			if(String.fromCharCode(event.which)=="a")
+			{
+				tempx = app.circles.models[playerid].attributes.pos_x-5 - player.attributes.width/2;
+				for(var i=0;i<tempwall.length;i++)
+				{
+					var hit = tempwall[i].hitTest(tempx,player.attributes.pos_y)
+					if(hit)
+						hitornot = true;
+				}
+				if(!hitornot)
+					app.circles.models[playerid].attributes.pos_x-=5;
+			}
+			else if(String.fromCharCode(event.which)=="d")
+			{
+				tempx = app.circles.models[playerid].attributes.pos_x + player.attributes.width/2;
+				for(var i=0;i<tempwall.length;i++)
+				{
+					var hit = tempwall[i].hitTest(tempx,player.attributes.pos_y)
+					if(hit)
+						hitornot = true;
+				}
+				if(!hitornot)
+					app.circles.models[playerid].attributes.pos_x+=5;
+			}
+			else if(String.fromCharCode(event.which)=="w")
+			{
+				tempy = app.circles.models[playerid].attributes.pos_y-5 - player.attributes.width/2;
+				for(var i=0;i<tempwall.length;i++)
+				{
+					var hit = tempwall[i].hitTest(player.attributes.pos_x,tempy)
+					if(hit)
+						hitornot = true;
+				}
+				if(!hitornot)
+					app.circles.models[playerid].attributes.pos_y-=5;
+			}
+			else if(String.fromCharCode(event.which)=="s")
+			{
+				tempy = app.circles.models[playerid].attributes.pos_y + player.attributes.width/2;
+				for(var i=0;i<tempwall.length;i++)
+				{
+					var hit = tempwall[i].hitTest(player.attributes.pos_x,tempy)
+					if(hit)
+						hitornot = true;
+				}
+				if(!hitornot)
+					app.circles.models[playerid].attributes.pos_y+=5;
+			}
+			_pos_x = app.circles.models[playerid].attributes.pos_x;
+			_pos_y = app.circles.models[playerid].attributes.pos_y;
+			if(String.fromCharCode(event.which)=="a"||String.fromCharCode(event.which)=="s"||String.fromCharCode(event.which)=="d"||String.fromCharCode(event.which)=="w")
+			{
+				app.circles.models[playerid].save( {pos_x: _pos_x, pos_y: _pos_y},
+									{	success:	function(model,response,options){
+													console.log("successfully saved model, id="+model.id);
+												},
+										error: 		function(model,response,options){
+														//	not successful in save
+														//	model is not changed, as "wait"=true
+														console.log("failed in saving model, id="+model.id+" error="+response.errmsg);
+													},
+										view:	this,
+										wait:	true									
+									}
+									);	
+			}
+		},null, false, this);
+		
+		
+		
+		stage.update();
+		
+		
+		
+		$(document).ready(	function(){
+		
+			var socket = io.connect();	//	establish a websocket connection with server
+			Backbone.socket=socket;		//	Backbone.sync use this socket connection to sync with the server
+			createjs.Ticker.on("tick", tick);
+			createjs.Ticker.setFPS(2000);
+			Backbone.$ = $;				//	let Backbone to use the current jQuery library
+			app.models.OneCircle = Backbone.Model.extend( {
+							default: 	{	
+											pos_x: 0,
+											pos_y: 0,
+											width: 10,
+											height: 10,
+											color:	"#000000",
+											type : "wall"
+										},
+							validate:	function(attrs,options){
+											if (!$.isNumeric(attrs.pos_x))
+											{	return "pos_x is not a number";
+											}
+											if (!$.isNumeric(attrs.pos_y))
+											{	return "pos_y is not a number";
+											}
+											if (!$.isNumeric(attrs.width))
+											{	return "width is not a number";
+											}
+											if (!$.isNumeric(attrs.height))
+											{	return "height is not a number";
+											}											
+											//	refer to http://learning.sd.polyu.edu.hk/x/-6PpAQ
+											var isOk  = /(^#[0-9A-F]{6}$)|(^#[0-9A-F]{3}$)/i.test(attrs.color);
+											if (!isOk)
+											{	return "color is not a valid hex color string";
+											}
+											
+											return;	//	no error
+										},
+							circleShape:	null,
+								}
+								);
+				//	a OneCircle class
+				
+			app.collections.Circles = Backbone.Collection.extend( {
+						model:	app.models.OneCircle,
+						
+						url:	'bbio_circles',
+								//	url must have no "/" for .ioBind() to work properly
+						
+						createModel:	function(data){
+								console.log("OneCircle created, id="+data.id);
+								this.add( data );
+							},
+						
+						initialize:		function(models,options){
+							_.bindAll(this,"createModel");
+							this.ioBind("create",this.createModel,this);
+							}
+					});
+							
+			app.views.OneCircleView = Backbone.View.extend(	{
+			
+				initialize: function() {
+						//	handle update on model as informed by server 
+						_.bindAll(this,"on_server_update_model");
+						this.model.ioBind("update",this.on_server_update_model,this);
+						
+						//	handle destroy on model as informed by server 						
+						_.bindAll(this,"on_server_destroy_model");
+						this.model.ioBind("delete",this.on_server_destroy_model,this);
+
+						this.listenTo(this.model, "remove", function() {	this.remove();	});
+							//	generated when this.model is removed from its collection
+							
+						this.listenTo(this.model, "change", this.render);
+						this.listenTo(this.model, "add", this.render);
+						this.drawPhysics();
+						this.render();
+					},
+
+				on_server_destroy_model:	function(data){
+							//	data.id == id of the model to be removed
+							var model = app.circles.get(data.id);
+							if (model==undefined)
+							{	//	error in id returned
+								console.log("delete model from server failed, id="+data.id);
+							} else
+							{	console.log("delete model from server successful, id="+data.id);
+								app.circles.remove(model);
+							}
+						},
+
+				on_server_update_model:	function(data){
+						//	update the model with new data
+						this.model.set(data);
+							//	this generates the "change" event
+					},
+					
+				remove:	function()	{
+						stage.removeChild(this.model.circleShape);
+						stage.update();
+						alert("circle removed, id="+this.model.id);
+					},
+				
+
+				drawPhysics: function() {
+					var circleShape;
+					console.log(this.model.get("id"));
+					console.log(this.model.get("type"));
+					if (this.model.circleShape!=null)
+					{	circleShape=this.model.circleShape;
+					} else
+					{	
+						circleShape=this.model.circleShape=new createjs.Shape();
+						stage.addChild(circleShape);
+					}
+					if(this.model.get("type")=="circle")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).
+							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
+					}
+					else if(this.model.get("type")=="Wall")
+					{
+						//circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						//circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
+						console.log("test");
+						wallBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")));
+					}
+					else if(this.model.get("type")=="triangle")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).drawPolyStar(this.model.get("pos_x"), this.model.get("pos_y"),this.model.get("width"),3,0,30);
+					}
+					else if(this.model.get("type")=="Player")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).
+							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
+					};
+					stage.update();
+//					console.log("render");
+				
+				},
+
+				
+				render:	function()	{
+					var circleShape;
+					if (this.model.circleShape!=null)
+					{	circleShape=this.model.circleShape;
+					} else
+					{	
+						circleShape=this.model.circleShape=new createjs.Shape();
+						stage.addChild(circleShape);
+						
+						circleShape.on("pressup",function(evt,view) {
+						console.log(evt.nativeEvent.which);
+							console.log("X: "+evt.stageX);
+							//circleShape.graphics.beginFill("#000000").
+								//drawRect(evt.stageX, evt.stageY,10,10);
+							},null, false, this);	
+						
+						
+					}
+					if(this.model.get("type")=="circle")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).
+							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
+					}
+					else if(this.model.get("type")=="Wall")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
+						//wallBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")));
+					}
+					else if(this.model.get("type")=="triangle")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).drawPolyStar(this.model.get("pos_x"), this.model.get("pos_y"),this.model.get("width"),3,0,30);
+					}
+					else if(this.model.get("type")=="Player")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).
+							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
+					};
+					stage.update();
+//					console.log("render");
+					}
+				}
+				);
+				
+			app.circles = new app.collections.Circles;
+			_.extend(app.views, Backbone.Events);
+			app.views.addView=function(model,collection,options)
+			{	var a_view = new app.views.OneCircleView( {model: model } );
+			};
+			app.views.listenTo(app.circles,"add",app.views.addView);
+
+			
+			//	sync current state with serer
+			app.circles.fetch({
+						success:	function(collection, response, options){
+										//	models in collection successfully loaded
+										//	"add" event will be generated for each model being created and added to collection, which triggers app.view.addView()
+									},
+						error:		function(collection, response, options){
+										console.log("failed, "+collection+" error="+response.errmsg);
+									}
+						});
+								
+					
+
+			//
+			//	for controlling server to generate error, to facilitate debugging
+			//
+			$("#server_error").click( function(){
+				if (server_error_status)
+				{	server_error_status=false;
+					$("#server_error").html("Enable Server Error");
+				} else
+				{	server_error_status=true;
+					$("#server_error").html("Disable Server Error");
+				}
+				socket.emit("set_server_bbio_circles_error",{status: server_error_status});
+			});
+			
+			socket.on('update_server_bbio_circles_error', function(data){
+				server_error_status=data.status;
+				if (server_error_status)
+				{	$("#server_error").html("Disable Server Error");
+				} else
+				{	$("#server_error").html("Enable Server Error");
+				}
+			});
+		});
+	
+	
+	function tick(event) {
+			app.circles.fetch({
+						success:	function(collection, response, options){
+										//	models in collection successfully loaded
+										//	"add" event will be generated for each model being created and added to collection, which triggers app.view.addView()
+									},
+						error:		function(collection, response, options){
+										console.log("failed, "+collection+" error="+response.errmsg);
+									}
+						});
+			stage.update(event); // important!!
+	}
+	
+	
+	</script>
+<script src="/js/Box2dWeb-2.1.a.3.js"></script>
+	<script src="/js/test1.js"></script>
+</body>	
+
+
+</html>
+

@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html>
+
+<!--
+	A client-side application which makes use of Backbone.js and Backbone.iobind for synchronizing with a back-end server running on Node.js
+	This makes use of EaselJS for drawing graphics elements
+!-->
+
+<head>
+	<script src="/bower_components/underscore/underscore.js"> </script>
+	<script src="/bower_components/backbone/backbone.js"> </script>
+	<script src="/bower_components/jquery/dist/jquery.min.js"> </script>
+	<script src="/bower_components/backbone.iobind/dist/backbone.iobind.min.js"> </script>
+	<script src="/bower_components/backbone.iobind/dist/backbone.iosync.min.js"> </script>
+	<script src="/socket.io/socket.io.js"></script>
+	<script src="/bower_components/easeljs/lib/easeljs-0.8.0.min.js"></script>
+</head>
+
+<body>
+	<canvas id="CirclesCanvas">
+	</canvas>	
+	
+	<script>
+		var app={ models:{}, collections:{}, views: {}	};
+		var server_error_status=false;
+		var one_circle, view;
+		
+		
+		
+		//	a class for synchronizing server time and generate a higher speed clock for local use
+		function LocalTimer(deltaTimeMSec, maxLocalSubTick)
+		{	//
+			//	deltaTimeMSec - time betwen ticks
+			//	maxLocalSubTick - maximum no subticks in a tick, >=1
+			//
+			//	maximum number of events per tick is determined by maxLocalSubTick; when performance of system is low, the number of events per tick will be reduced
+		
+			this.localSubTick = 0;
+			this.maxLocalSubTick = maxLocalSubTick;
+			
+			this.normDeltaTimeMSec = deltaTimeMSec;
+				//	nominal value of timeout to next tick
+				
+			this.maxDeltaTimeFactor=1.95;
+			this.maxDeltaTimeMSec =  this.normDeltaTimeMSec*this.maxDeltaTimeFactor;
+				//	maximum allowable timeout to next tick
+				
+			this.minDeltaTimeFactor=0.05;
+			this.minDeltaTimeMSec =  this.normDeltaTimeMSec*this.minDeltaTimeFactor;
+				//	minimum allowable timeout to next tick
+			
+			this.deltaTimeMSecAdjusted=this.normDeltaTimeMSec;
+				//	timeout to next tick after adjustment
+				
+			this.adjustFactor=0.5;	//	this affects the amount of time in adjustment - must be from 0 to 1, and larger means faster adjustment
+				
+			_.extend(this, Backbone.Events);
+			
+			this.lastHandlerTime=-1;
+			this.currEvent = { currTick:0, lastTick:0};	//	the last or current tick Event object from LocalTimer
+			
+			this.timerHandler = function(timer)
+			{	var currTick=timer.nextTick-1+timer.localSubTick/timer.maxLocalSubTick;
+			
+				var currTime=performance.now();
+				//	given currTime, calculate the value of nextTick and localSubTick 
+
+				while (currTime > timer.nextTime)
+				{	timer.lastTime = timer.nextTime;
+					timer.nextTime = timer.nextTime + timer.deltaTimeMSecAdjusted;
+					timer.timeMSecPerSubTick = timer.deltaTimeMSecAdjusted/timer.maxLocalSubTick;
+					timer.deltaTimeMSecAdjusted=timer.normDeltaTimeMSec;
+					timer.nextTick++;
+				}
+				//	round to the next larger localSubTick
+				var minElapsedTimeInTick=currTime - timer.lastTime + 4;		//	setTimeout sleeps for at least 4 ms
+				timer.localSubTick = Math.trunc(minElapsedTimeInTick / timer.timeMSecPerSubTick)+1;
+				var waitTime = timer.localSubTick * timer.timeMSecPerSubTick + timer.lastTime - currTime;
+				
+				//console.log("tick="+timer.nextTick+" subtick="+timer.localSubTick+" waitTime="+waitTime);
+				
+				setTimeout(	timer.timerHandler, waitTime, timer);
+				
+				var event={};
+				event.target=timer;
+				event.type="LocalTimerTick";
+				event.paused=false;
+				event.time=currTick*timer.normDeltaTimeMSec;
+				if (timer.lastHandlerTime==-1)
+					event.delta=0;
+				else
+					event.delta=event.time-timer.lastHandlerTime;
+				timer.lastHandlerTime = event.time;
+				event.currTick = currTick;
+				event.lastTick = timer.currEvent.currTick;
+				
+				timer.currEvent = event;
+				timer.trigger("tick",event);
+			}
+
+			//	for printing debug messages
+			this.lastTick=0;
+			this.lastTime=0;
+			this.maxAvgDeltaTime=0;
+			this.minAvgDeltaTime=100000;
+			
+			this.syncServer=function(currTick)
+			{	var currTime=performance.now();
+				var tickdiff = this.nextTick - currTick;
+				var timediff = this.nextTime - tickdiff*this.normDeltaTimeMSec - currTime;
+				this.deltaTimeMSecAdjusted =  this.normDeltaTimeMSec - timediff*this.adjustFactor;
+										
+				if (this.deltaTimeMSecAdjusted<this.minDeltaTimeMSec)
+				{	this.deltaTimeMSecAdjusted = this.minDeltaTimeMSec;
+				}
+				if (this.deltaTimeMSecAdjusted>this.maxDeltaTimeMSec)
+				{	this.deltaTimeMSecAdjusted = this.maxDeltaTimeMSec;
+				}
+				
+				//console.log("server tick="+currTick+" next local tick="+this.nextTick+" next timeout="+this.deltaTimeMSecAdjusted);
+
+				var timeDiff=currTime - this.lastTime;
+				var tickDiff=currTick - this.lastTick;
+				var avgDeltaTime = timeDiff/tickDiff;
+				this.maxAvgDeltaTime = (this.maxAvgDeltaTime<avgDeltaTime)?avgDeltaTime:this.maxAvgDeltaTime;
+				this.minAvgDeltaTime = (this.minAvgDeltaTime>avgDeltaTime)?avgDeltaTime:this.minAvgDeltaTime;
+								
+				//console.log("delta time from server="+avgDeltaTime+" min="+this.minAvgDeltaTime+" max="+this.maxAvgDeltaTime);
+								
+				this.lastTime = currTime;
+				this.lastTick = currTick;
+			}
+			
+			this.getTickPerSecond = function()	{	return 1/this.normDeltaTimeMSec*1000;	}
+			
+			this.getTickEventPerSecond = function()
+				{	return this.getTickPerSecond()*this.maxLocalSubTick;
+				}
+			
+			this.start= function(startTick, handler)
+				{	//	start the timer
+					
+					//	startTick - the starting tick value of this LocalTimer
+					//	return true if successfully started, otherwise return false
+
+					if (this.maxLocalSubTick<1)
+					{	//	error in this value, hence cannot start
+						return false;
+					}
+					
+					this.nextTick = startTick+1;			// 	tick value of the coming tick
+					this.lastTime = performance.now();	//	time of this tick
+					this.nextTime = this.lastTime + this.deltaTimeMSecAdjusted;	//	time of coming tick
+					this.timeMSecPerSubTick=this.deltaTimeMSecAdjusted/this.maxLocalSubTick;	//	duration for one subtick
+
+					this.on("tick",handler);
+					setTimeout( this.timerHandler, this.timeMSecPerSubTick, this);
+					return true;
+				}
+		}
+		
+		function TimerEventHandler(event)
+		{	
+			//console.log("timer tick="+event.currTick+" current time ="+event.time+" server tick="+app.gamestate.get('tick'));
+
+			var deltaTimeSec=app.gamestate.attributes.deltaTimeMSec/1000;
+			var currTick=event.currTick;
+			
+			app.circles.forEach( function(model,index){
+				//	for each circle (model) in circles (collection), calculate the new position with the new tick (currTick)
+								
+
+				//	the following implements the same simulation logic as the server side
+				//	note that not all the tick events from gamestate are received, and the model updated on the client side may be different from that on the server side. Hence, there is still a need to re-fetch the model from server side. However, as simulation is based on tick value and hence should have no accumulative error, the function on the client side should still be working properly before the model from server arrives
+				if(model.attributes.type = "player" && model.attributes.state == 0)
+				{	
+					var vx=model.attributes.vx;
+					var vy=model.attributes.vy;
+					var st_tick=model.attributes.st_tick;
+					var st_pos_x=model.attributes.st_pos_x;
+					var st_pos_y=model.attributes.st_pos_y;
+					var pos_x=st_pos_x+vx*(currTick-st_tick)*deltaTimeSec;
+					var pos_y=st_pos_y+vy*(currTick-st_tick)*deltaTimeSec;
+					var radius = model.attributes.radius;
+					
+					var max_x = pos_x+radius;
+					var min_x = pos_x-radius;
+					var max_y = pos_y+radius;
+					var min_y = pos_y-radius;
+				
+					var obj={pos_x: pos_x, pos_y:pos_y};
+					var x_changed=false, y_changed=false;
+				
+					if (max_x>app.gamestate.attributes.canvas_width)
+					{	obj.st_pos_x = 2*app.gamestate.attributes.canvas_width-max_x-radius;
+						obj.st_tick = currTick;
+						obj.vx=vx*-1;
+						x_changed=true;
+					}
+					if (min_x<0)
+					{	obj.st_pos_x = -min_x+radius;
+						obj.st_tick = currTick;
+						obj.vx=vx*-1;
+						x_changed=true;								
+					}
+
+					if (max_y>app.gamestate.attributes.canvas_height)
+					{	obj.st_pos_y=2*app.gamestate.attributes.canvas_height-max_y-radius;
+						obj.st_tick=currTick;
+						obj.vy=vy*-1;
+						y_changed=true;								
+					}
+					if (min_y<0)
+					{	obj.st_pos_y=-min_y+radius;
+						obj.st_tick=currTick;
+						obj.vy=vy*-1;
+						y_changed=true;								
+					}
+					
+					if (x_changed)
+					{	if (y_changed)
+						{	//	do nothing
+						}
+						else
+							obj.st_pos_y=pos_y;
+					} else
+					{	if (y_changed)
+						{	obj.st_pos_x=pos_x;
+						} else
+						{	//	do nothing
+						}
+					}
+					
+					model.set(obj);
+					if (x_changed || y_changed)
+					{	
+						if (model.waitSyncStartTick==0)
+						{	//	mark the time (in tick) when this model has to be resynched with the one from server
+						
+							//console.log("fetch id="+model.id+" tick="+currTick);
+							model.waitSyncStartTick=event.currTick;
+						} else
+						{	//	still waiting for parameters from server on the model for resynched
+						
+							//	console.log("fetch id="+model.id+" tick="+currTick+" started waiting at tick="+model.waitSyncStartTick);
+						} 
+					}
+					
+					if ((model.waitSyncStartTick!=0) && (event.currTick - model.waitSyncStartTick > 2))
+					{	//	has been waiting too long to sync; sync message from server may be lost and hence fetch from server directly
+						model.fetch(
+							{	success: function(model,response,option){
+											console.log("fetch complete, id="+model.id+" time taken="+(currTick-model.waitSyncStartTick)+" ticks");
+											model.waitSyncStartTick=0;
+											},
+								error:	function(model,response,option){
+											console.log("fetch failed, id="+model.id+" requested at tick="+model.waitSyncStartTick);
+											model.waitSyncStartTick=0;
+											}
+							}
+						);
+					}
+					
+				}
+				
+				} );
+		
+			app.stage.update(event);
+		}		
+		
+		
+		$(document).keypress(function(event){
+			var playerid = 0;
+			for(var i=0;i<app.circles.models.length;i++)
+			{
+				if(app.circles.models[i].attributes.type="player")
+					playerid = i;
+			}
+			var player = app.circles.models[playerid];
+			
+			
+			if(String.fromCharCode(event.which)=="a" )
+			{
+				//Global Location of ball with radius (top side)
+				ballx = app.circles.models[playerid].attributes.st_pos_x+180;
+				bally = app.circles.models[playerid].attributes.st_pos_y+200;
+				var tempwall= new createjs.Graphics().beginFill("#EE6363")
+				.drawRect(app.circles.models[1].attributes.st_pos_x+100,app.circles.models[1].attributes.st_pos_y+100,
+				app.circles.models[1].attributes.width,app.circles.models[1].attributes.height);
+				app.tempwall = new createjs.Shape(tempwall);
+				var hit = app.tempwall.hitTest(ballx,bally);
+				if(!hit)
+					app.circles.models[playerid].attributes.st_pos_x-=5;
+			}
+			else if(String.fromCharCode(event.which)=="d" )
+			{
+				//Global Location of ball with radius (top side)
+				ballx = app.circles.models[playerid].attributes.st_pos_x+215;
+				bally = app.circles.models[playerid].attributes.st_pos_y+200;
+				var tempwall= new createjs.Graphics().beginFill("#EE6363")
+				.drawRect(app.circles.models[3].attributes.st_pos_x+500,app.circles.models[3].attributes.st_pos_y+100,
+				app.circles.models[3].attributes.width,app.circles.models[3].attributes.height);
+				app.tempwall = new createjs.Shape(tempwall);
+				//app.stage.addChild(app.tempwall);
+				var hit = app.tempwall.hitTest(ballx,bally);
+				if(!hit)
+					app.circles.models[playerid].attributes.st_pos_x+=5;
+			}
+			else if(String.fromCharCode(event.which)=="w" )
+			{
+				//Global Location of ball with radius (top side)
+				ballx = app.circles.models[playerid].attributes.st_pos_x+200;
+				bally = app.circles.models[playerid].attributes.st_pos_y+180;
+				var tempwall= new createjs.Graphics().beginFill("#EE6363")
+				.drawRect(app.circles.models[2].attributes.st_pos_x+100,app.circles.models[2].attributes.st_pos_y+100,
+				app.circles.models[2].attributes.width,app.circles.models[2].attributes.height);
+				app.tempwall = new createjs.Shape(tempwall);
+				var hit = app.tempwall.hitTest(ballx,bally);
+				if(!hit)
+					app.circles.models[playerid].attributes.st_pos_y-=5;
+			}
+			else if(String.fromCharCode(event.which)=="s" )
+			{
+				//Global Location of ball with radius (top side)
+				ballx = app.circles.models[playerid].attributes.st_pos_x+200;
+				bally = app.circles.models[playerid].attributes.st_pos_y+215;
+				var tempwall= new createjs.Graphics().beginFill("#EE6363")
+				.drawRect(app.circles.models[4].attributes.st_pos_x+100,app.circles.models[4].attributes.st_pos_y+400,
+				app.circles.models[4].attributes.width,app.circles.models[4].attributes.height);
+				app.tempwall = new createjs.Shape(tempwall);
+				var hit = app.tempwall.hitTest(ballx,bally);
+				if(!hit)
+					app.circles.models[playerid].attributes.st_pos_y+=5;
+			}
+			ballx = app.circles.models[playerid].attributes.st_pos_x+200;
+			bally = app.circles.models[playerid].attributes.st_pos_y+200;
+			_st_pos_x = app.circles.models[playerid].attributes.st_pos_x;
+			_st_pos_y = app.circles.models[playerid].attributes.st_pos_y;
+			
+			if(String.fromCharCode(event.which)=="a"||String.fromCharCode(event.which)=="s"||String.fromCharCode(event.which)=="d"||String.fromCharCode(event.which)=="w")
+			{
+				app.circles.models[playerid].save( {},
+									{	
+										success:	function(model,response,options){
+													console.log("successfully saved model, id="+model.id);
+												},
+										error: 		function(model,response,options){
+														//	not successful in save
+														//	model is not changed, as "wait"=true
+														console.log("failed in saving model, id="+model.id+" error="+response.errmsg);
+													},
+										view:	this,
+										wait:	true									
+									}
+									);	
+			}					
+		},null, false, this);
+		
+				
+		app.Timer = null;		
+		
+		$(document).ready(	function(){
+		
+			var socket = io.connect();	//	establish a websocket connection with server
+			Backbone.socket=socket;		//	Backbone.sync use this socket connection to sync with the server
+			
+			Backbone.$ = $;				//	let Backbone to use the current jQuery library
+		
+			app.models.GameState = Backbone.Model.extend( {
+					model:	{	deltaTimeSec: 0,
+								tick:	0,
+								state:	0,
+								canvas_width: 0,
+								canvas_height: 0
+							},
+					url:	"bbio_circles_moving_gamestate"
+					}
+					);
+					
+			app.gamestate = new app.models.GameState();
+			app.gamestate.fetch(	
+				{	success:	
+						function(model, response,options){
+						
+							// console.log("game state fetched successfully");
+												
+							//	initialize local timer based on information from server
+							
+							app.Timer = new LocalTimer(app.gamestate.get('deltaTimeMSec'),50);
+							var eventPerSecond=app.Timer.getTickEventPerSecond();
+							//console.log("number of timer event per second = "+eventPerSecond);							
+							var status=app.Timer.start(app.gamestate.get('tick'),TimerEventHandler);
+							if (status)
+							{	//console.log("LocalTimer started successfully");
+							} else
+							{	//console.log("LocalTimer cannot start successfully, something wrong!!!");
+							}
+
+							$("#CirclesCanvas").attr("width",app.gamestate.get("canvas_width"));
+							$("#CirclesCanvas").attr("height",app.gamestate.get("canvas_height"));
+												
+							app.stage = new createjs.Stage("CirclesCanvas");
+
+							//	create the background of this stage
+							var background_graphics = new createjs.Graphics().beginFill("#101010")
+															.drawRect(0,0,app.gamestate.get("canvas_width"),app.gamestate.get("canvas_height"));
+							app.background = new createjs.Shape(background_graphics);
+							app.stage.addChild(app.background);	
+							// rubbishbin 
+							var rubbishbin_graphics = new createjs.Graphics().beginFill("#EE6363")
+							.drawRect(560,160,70,40);
+							app.rubbishbin = new createjs.Shape(rubbishbin_graphics);
+							app.stage.addChild(app.rubbishbin);
+
+							
+								
+					
+							app.stage.update();
+							
+							app.models.OneCircle = Backbone.Model.extend( {
+								default: 	{	st_pos_x: 	0,
+												st_pos_y: 	0,
+												st_tick:	0,
+												vx:		0,
+												vy:		0,
+												width: 10,
+												height: 10,
+												color:	"#000000",
+												pos_x:	0,
+												pos_y:	0,
+												type: "circle",
+												state:	0
+											},
+								validate:	function(attrs,options){
+												if (!$.isNumeric(attrs.st_pos_x))
+												{	return "st_pos_x is not a number";
+												}
+												if (!$.isNumeric(attrs.st_pos_y))
+												{	return "st_pos_y is not a number";
+												}
+												if (!$.isNumeric(attrs.vx))
+												{	return "vx is not a number";
+												}
+												if (!$.isNumeric(attrs.vy))
+												{	return "vy is not a number";
+												}
+												if (!$.isNumeric(attrs.st_tick))
+												{	return "st_tick is not a number";
+												}
+											
+														
+												//	refer to http://learning.sd.polyu.edu.hk/x/-6PpAQ
+												var isOk  = /(^#[0-9A-F]{6}$)|(^#[0-9A-F]{3}$)/i.test(attrs.color);
+												if (!isOk)
+												{	return "color is not a valid hex color string";
+												}
+														
+												return;	//	no error
+											},
+								waitSyncStartTick:	0,	//	tick no of last fetch request to sync state of this model							
+									}
+								);
+								//	a OneCircle class			
+
+							
+							app.collections.Circles = Backbone.Collection.extend( {
+									model:	app.models.OneCircle,
+									
+									url:	'bbio_circles',
+											//	url must have no "/" for .ioBind() to work properly
+									
+									createModel:	function(data){
+											console.log("OneCircle created, id="+data.id);
+											this.add( data );
+										},
+									
+									initialize:		function(models,options){
+										_.bindAll(this,"createModel");
+										this.ioBind("create",this.createModel,this);
+										}
+								});	
+
+							app.circles = new app.collections.Circles;
+								
+							app.gamestate.on_server_update_gamestate= function(data){
+							
+								//console.log("gamestate.tick="+data.tick);
+								app.gamestate.set(data);
+								
+								app.Timer.syncServer(app.gamestate.attributes.tick);
+									// provide server timing information for local timer to synchronize with server
+
+								};
+								
+							_.bindAll(app.gamestate,"on_server_update_gamestate");
+							model.ioBind("update",app.gamestate.on_server_update_gamestate,app.gamestate);
+						
+							_.extend(app.views, Backbone.Events);
+							app.views.addView=function(model,collection,options)
+							{	var a_view = new app.views.OneCircleView( {model: model } );
+							};
+							app.views.listenTo(app.circles,"add",app.views.addView);
+							
+							console.log("fetch all models from server");
+							
+							//	sync current state with server
+							app.circles.fetch({
+										success:	function(collection, response, options){
+														//	models in collection successfully loaded
+														//	"add" event will be generated for each model being created and added to collection, which triggers app.view.addView()
+														
+														console.log("all models fetched successfully");
+													},
+										error:		function(collection, response, options){
+														console.log("failed, "+collection+" error="+response.errmsg);
+													}
+										});
+							
+						
+							app.views.OneCircleView = Backbone.View.extend(	{
+							
+								initialize: function() {
+										//	handle update on model as informed by server 
+										_.bindAll(this,"on_server_update_model");
+										this.model.ioBind("update",this.on_server_update_model,this);
+										
+										//	handle destroy on model as informed by server 						
+										_.bindAll(this,"on_server_destroy_model");
+										this.model.ioBind("delete",this.on_server_destroy_model,this);
+
+										this.listenTo(this.model, "remove", function() {	this.remove();	});
+											//	generated when this.model is removed from its collection
+										
+										this.displayObjectContainer=null;	//	a container of DisplayObject for visualizing this model
+										this.circleShape=null;		//	a Shape object corresponds to the circle
+										this.labelText=null;			//	a Text object corresponds to the label
+										
+										//	position of the drag point on displayObjectContainer when mousedown event is generated
+										this.mouseDrag_pos_x=0;
+										this.mouseDrag_pos_y=0;
+										
+										this.mouseState=null;
+										
+										this.listenTo(this.model, "change", this.render);
+										this.listenTo(this.model,"save",this.render);
+										this.render();
+									},
+
+								on_server_destroy_model:	function(data){
+										//	data.id == id of the model to be removed
+										var model = app.circles.get(data.id);
+										if (model==undefined)
+										{	//	error in id returned
+											console.log("delete model from server failed, id="+data.id);
+										} else
+										{	console.log("delete model from server successful, id="+data.id);
+											app.circles.remove(model);
+										}
+									},
+
+								on_server_update_model:	function(data){
+										if (data.state==0)
+										{	//	while in simulating mode, value of (pos_x,pos_y) is not used as that is simulated with lower resolution timer
+											delete data.pos_x;
+											delete data.pos_y;
+										}
+										this.model.set(data);
+										this.render();
+											//	this generates the "change" event
+										this.model.waitSyncStartTick=0;
+										console.log("model update from server, id="+data.id);
+									},
+									
+								remove:	function()	{
+										this.displayObjectContainer.removeChild(this.labelText);
+										this.displayObjectContainer.removeChild(this.circleShape);
+										this.circleShape.removeAllEventListeners();
+										this.labelText=null;
+										this.circleShape=null;
+										app.stage.removeChild(this.displayObjectContainer);
+										this.displayObjectContainer=null;
+									
+//										app.stage.update();
+										console.log("circle removed, id="+this.model.id);
+									},
+									
+								getWaitSyncText:	function()	{
+									if (this.model.waitSyncStartTick!=0)
+									{	return ";waitSync("+(app.Timer.currEvent.currTick - this.model.waitSyncStartTick)+")";
+									} else
+										return "";
+									},
+									
+								render:	function()	{
+									var container;
+									if (this.displayObjectContainer!=null)
+									{	container=this.displayObjectContainer;
+									} else
+									{	
+										container=this.displayObjectContainer=new createjs.Container();
+										var circleShape=this.model.circleShape=new createjs.Shape();
+										if(this.model.get("type")=="circle")
+										{
+											circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+											circleShape.graphics.beginFill(this.model.get("color")).
+												drawCircle(this.model.get("st_pos_x"), this.model.get("st_pos_y"), this.model.get("width")/2);
+										}
+										else if(this.model.get("type")=="wall")
+										{
+											circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+											circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("st_pos_x"), this.model.get("st_pos_y"), this.model.get("width"),this.model.get("height"));
+										}
+										else if(this.model.get("type")=="triangle")
+										{
+											circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+											circleShape.graphics.beginFill(this.model.get("color")).drawPolyStar(this.model.get("st_pos_x"), this.model.get("st_pos_y"),this.model.get("width"),3,0,30);
+										}
+										else if(this.model.get("type")=="player")
+										{
+											circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+											circleShape.graphics.beginFill(this.model.get("color")).
+												drawCircle(this.model.get("st_pos_x"), this.model.get("st_pos_y"), this.model.get("width")/2);
+										}
+										
+										container.addChild(circleShape);
+										
+										//var text=this.labelText=new createjs.Text("id("+this.model.id+")","20px Arial","#ffffff");
+										//container.addChild(text);
+
+										app.stage.addChild(container);
+										
+							/*			circleShape.on("pressup",function(evt,view) {
+												//console.log("pressup in circle, id="+view.model.id);
+												view.mouseState=null;
+											
+												var hit=app.rubbishbin.hitTest(evt.stageX,evt.stageY);
+												if (hit)
+												{	//	delete this circle
+													alert("..");
+													view.model.destroy(	
+														{	success: function(model, response,options){
+																		//	successfully removed on the server side, hence delete the model on the client side
+																		console.log("successfully destroyed model id="+model.id+" on server");
+																		app.circles.remove(model);
+																			//	this triggers the "remove" event on model
+																	},
+															error:	function(model, response,options){
+																		//	remove not successful, hence the object on client side is not removed
+																		console.log("failed in destroying model id="+model.id+" error="+response.errmsg);
+																	},
+															wait:	true	//	wait till the server to confirm the delete before actually destroying it on client side
+																			//	refer to Backbone.destroy in http://backbonejs.org/#Model-destroy
+														});
+												} else
+												{	//	change state back to simulation mode, and update values for trajectory model
+													
+													var obj={};
+													obj.state=0;
+													obj.st_tick=app.Timer.currEvent.currTick;
+													obj.st_pos_x = evt.stageX-this.mouseDrag_pos_x;
+													obj.st_pos_y = evt.stageY-this.mouseDrag_pos_y;
+													
+													view.model.save( obj,
+													{	success:	function(model,response,options){
+																	console.log("successfully saved model, id="+model.id);
+																},
+														error: 		function(model,response,options){
+																		//	not successful in save
+																		//	model is not changed, as "wait"=true
+																		console.log("failed in saving model, id="+model.id+" error="+response.errmsg);
+																	},
+														view:	this,
+														wait:	true
+													});
+												}
+											},null, false, this);	*/
+										
+										circleShape.on("mousedown",function(evt,view){
+												console.log(view.model.attributes.id);
+												console.log(evt.stageX);
+												view.model.save({color:"#555555"},
+														{	success:	function(model,response,options){
+																			console.log("model not in simulation mode, id="+model.id);
+																		},
+															error: 		function(model,response,options){
+																			//	not successful in save
+																			//	model is not changed, as "wait"=true
+																			console.log("failed in updating model, id="+model.id+" error="+response.errmsg);
+																		},
+															view:	this,
+															wait:	true	//	wait till the server to confirm the save before confirm the change on the model on client side
+																			//	if error in server, the model will not be updated on the client side
+																			//	may not be good in terms of responsiveness on the client side
+														}
+													);
+												},	null, false, this);	
+									}
+									console.log(this.model.get("pos_x"));
+									container.x=this.model.get("pos_x");
+									container.y=this.model.get("pos_y");
+									
+
+									//this.labelText.text="id("+this.model.id+")";
+									//if (this.mouseState!=null)
+									//{	this.labelText.text+=";"+this.mouseState;
+									//}
+									
+									//this.labelText.text+=this.getWaitSyncText();
+									
+									}
+								}
+								);
+								
+							app.background.on("dblclick", function(evt,_app){
+								console.log(_app.circles);
+								var obj={};
+								obj.st_pos_x = evt.stageX;
+								obj.st_pos_y = evt.stageY;
+								obj.pos_x = obj.st_pos_x;
+								obj.pos_y = obj.st_pos_y;
+								obj.color = "#777777";
+								obj.width = 30;
+								obj.height = 10;
+								obj.vx = 0;
+								obj.vy = 0;
+								obj.st_tick = _app.Timer.currEvent.currTick;
+								obj.state=0;
+								
+							
+								var a_circle = _app.circles.create( obj,
+															{	success:	function(model,response,options){
+																				console.log("success in creating model id="+model.id+" response="+response);
+																				//model.circleShape=null;
+																			},
+																error: 		function(model,response,options){
+																				//	not successful in save
+																				console.log("error in creating model id="+model.id+" error="+response.errmsg);
+																			},
+																wait:	true
+															}
+														);
+													}, null, false, app);
+								},	
+				
+					error:		function(model, response,options){
+									console.log("error in fetching game state");
+								}
+				}
+				);
+
+			
+			//
+			//	for controlling server to generate error, to facilitate debugging
+			//
+			$("#server_error").click( function(){
+				if (server_error_status)
+				{	server_error_status=false;
+					$("#server_error").html("Enable Server Error");
+				} else
+				{	server_error_status=true;
+					$("#server_error").html("Disable Server Error");
+				}
+				socket.emit("set_server_bbio_circles_error",{status: server_error_status});
+			});
+			
+			socket.on('update_server_bbio_circles_error', function(data){
+				server_error_status=data.status;
+				if (server_error_status)
+				{	$("#server_error").html("Disable Server Error");
+				} else
+				{	$("#server_error").html("Enable Server Error");
+				}
+			});
+		});
+
+	</script>
+</body>	
+
+
+</html>
+
