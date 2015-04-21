@@ -43,7 +43,7 @@
 		var cscscs;
 		//boolean to control not more that one hole
 		var digging = false;
-		
+		// A Shape to draw  light line
 		var line = new createjs.Shape();
 		//	create a background
 		var background_graphics = new createjs.Graphics().beginFill("#000000")
@@ -57,6 +57,8 @@
 		var rubbishbin = new createjs.Shape(rubbishbin_graphics);
 		stage.addChild(rubbishbin);
 		
+		//Controlling Part of the main character
+		
 		$(document).keypress(function(event){
 			
 			var playerid = 0;
@@ -64,7 +66,7 @@
 			var tempwall = new Array();	
 			var hitornot = 0;
 			var player;
-
+			/**************Get the playerid from server ****************/
 			for(var i=0;i<app.circles.models.length;i++)
 			{
 				if(app.circles.models[i].attributes.type=="Player")
@@ -73,6 +75,8 @@
 					player = app.circles.models[i];
 				}
 			}
+			
+			/****************Draw invisible wall on the map to test if player hit the wall*********************************/
 			for(var i=0;i<app.circles.models.length;i++)
 			{
 				if(app.circles.models[i].attributes.type=="Wall")
@@ -84,6 +88,8 @@
 					wallindex++;
 				}
 			}
+			
+			/*************************Move Left********************/
 			if(String.fromCharCode(event.which)=="a")
 			{
 				tempx = app.circles.models[playerid].attributes.pos_x-5 - player.attributes.width/2;
@@ -96,6 +102,7 @@
 				if(!hitornot)
 					app.circles.models[playerid].attributes.pos_x-=5;
 			}
+			/*************************Move Right********************/
 			else if(String.fromCharCode(event.which)=="d")
 			{
 				tempx = app.circles.models[playerid].attributes.pos_x + player.attributes.width/2;
@@ -108,6 +115,7 @@
 				if(!hitornot)
 					app.circles.models[playerid].attributes.pos_x+=5;
 			}
+			/*************************Move Upward********************/
 			else if(String.fromCharCode(event.which)=="w")
 			{
 				tempy = app.circles.models[playerid].attributes.pos_y-5 - player.attributes.width/2;
@@ -120,6 +128,7 @@
 				if(!hitornot)
 					app.circles.models[playerid].attributes.pos_y-=5;
 			}
+			/*************************Move Downward********************/
 			else if(String.fromCharCode(event.which)=="s")
 			{
 				tempy = app.circles.models[playerid].attributes.pos_y + player.attributes.width/2;
@@ -134,6 +143,7 @@
 			}
 			_pos_x = app.circles.models[playerid].attributes.pos_x;
 			_pos_y = app.circles.models[playerid].attributes.pos_y;
+			/***************************************************************Save back the position to server*****************************************************************/
 			if(String.fromCharCode(event.which)=="a"||String.fromCharCode(event.which)=="s"||String.fromCharCode(event.which)=="d"||String.fromCharCode(event.which)=="w")
 			{
 				app.circles.models[playerid].save( {pos_x: _pos_x, pos_y: _pos_y},
@@ -152,7 +162,7 @@
 			}
 		},null, false, this);
 		
-		
+		///---------------------------------------------------End of Controlling Part---------------------------------------------------////
 		
 		stage.update();
 		
@@ -162,7 +172,9 @@
 			
 			var socket = io.connect();	//	establish a websocket connection with server
 			Backbone.socket=socket;		//	Backbone.sync use this socket connection to sync with the server
+			// Call tick function with FPS
 			createjs.Ticker.on("tick", tick);
+			// Setting the FPS of tick
 			createjs.Ticker.setFPS(200);
 			Backbone.$ = $;				//	let Backbone to use the current jQuery library
 			app.models.OneCircle = Backbone.Model.extend( {
@@ -261,7 +273,7 @@
 					alert("circle removed, id="+this.model.id);
 				},
 				
-				
+				//************************************************Draw the physics component ( Not visible on the game)****************************************************//
 				drawPhysics: function() {
 					var circleShape;
 					console.log(this.model.get("id"));
@@ -273,13 +285,8 @@
 						circleShape=this.model.circleShape=new createjs.Shape();
 						stage.addChild(circleShape);
 					}
-					if(this.model.get("type")=="circle")
-					{
-						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
-						circleShape.graphics.beginFill(this.model.get("color")).
-							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
-					}
-					else if(this.model.get("type")=="Wall")
+					// Draw physic of the wall
+					if(this.model.get("type")=="Wall")
 					{
 						//circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						//circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
@@ -316,28 +323,23 @@
 							}
 						},null, false, this);	
 					}
-					else if(this.model.get("type")=="triangle")
-					{
-						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
-						circleShape.graphics.beginFill(this.model.get("color")).drawPolyStar(this.model.get("pos_x"), this.model.get("pos_y"),this.model.get("width"),3,0,30);
-					}
+					//    may use later
 					else if(this.model.get("type")=="Player")
 					{
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
 					}
+					// Draw physic of mirror
 					else if(this.model.get("type")=="Mirror")
 					{
 						mirrorBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")),0);
 						console.log("M");
 					};	
-					stage.update();
-					//					console.log("render");
-					
+					stage.update();					
 				},
 				
-				
+				/*********************************************************************Render the component from server********************************************************/
 				render:	function()	{
 					var circleShape;
 					if (this.model.circleShape!=null)
@@ -347,7 +349,7 @@
 						circleShape=this.model.circleShape=new createjs.Shape();
 						stage.addChild(circleShape);					
 					}			
-					
+					// render for each type of components
 					if(this.model.get("type")=="circle")
 					{
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
@@ -372,7 +374,6 @@
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
 					};					
 					stage.update();
-					//					console.log("render");
 				}
 			}
 			);
@@ -385,7 +386,7 @@
 			app.views.listenTo(app.circles,"add",app.views.addView);
 			
 			
-			//	sync current state with serer
+			//	sync current state with server
 			app.circles.fetch({
 				success:	function(collection, response, options){
 					//	models in collection successfully loaded
@@ -421,35 +422,46 @@
 				}
 			});
 		});
-		
 		function tick(event) {
-			timeCount++;
+			timeCount++; // Timer
+			stage.addChild(line);	// add the shape to the stage
 			
-			stage.addChild(line);					
-
+			
+			/*******************Get all the points on light*********************/
 			lightStartX = centerPoint.startPoint.x;
 			lightStartY = centerPoint.startPoint.y;
 			lightEndX = centerPoint.intersectionPoint.x;
 			lightEndY = centerPoint.intersectionPoint.y;
 			lightReflectEndX = centerPoint.reflectedEnd.x;
 			lightReflectEndY = centerPoint.reflectedEnd.y;
+			/********************************************************************/
 			
+			
+			/***************Draw when dig a hole on a wall ****************/
 			if(digging)
 			{
 				line.graphics.clear();
-				line.graphics.setStrokeStyle(10);
+				line.graphics.setStrokeStyle(15);
 				line.graphics.beginStroke("#FFD700");
 				line.graphics.moveTo(lightStartX,lightStartY);
 				line.graphics.lineTo(lightEndX,lightEndY);
 				line.graphics.lineTo(lightReflectEndX,lightReflectEndY);
 				line.graphics.endStroke();
 			}
+			/*********************************************************************/
+			
+			
+			/***************Count the time to repair and clear the light line****************/
 			if(createTime!=0 && timeCount-createTime==250)
 			{
 				digging = false;
 				line.graphics.clear();
 				cscscs.graphics.beginFill("#8B4726").drawRect(createX, createY,createSizeX,createSizeY);
 			}
+			/***************************************************************************************/
+			
+			
+			/**********************************Always getting the position of components from server*************************************/
 			app.circles.fetch({
 				success:	function(collection, response, options){
 					//	models in collection successfully loaded
@@ -460,6 +472,8 @@
 				}
 			});
 			stage.update(event); // important!!
+			
+			/**********************************************************************************************************************************/
 		}
 		
 		document.addEventListener("mousedown", function(e) {
