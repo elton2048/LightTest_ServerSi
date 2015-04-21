@@ -44,6 +44,10 @@
 			.drawRect(465,50,70,40);
 		var rubbishbin = new createjs.Shape(rubbishbin_graphics);
 		stage.addChild(rubbishbin);
+
+		var globalCircleShape;
+		var globalX;
+		var globalY;
 		
 		
 		$(document).keypress(function(event){
@@ -274,11 +278,15 @@
 						console.log("test");
 						wallBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")));
 						circleShape.on("pressup",function(evt,view) {
-							// Right click
+							// Right click to show the break
 							if(evt.nativeEvent.which == 3) {
+								globalCircleShape = circleShape;
+								globalX = evt.stageX;
+								globalY = evt.stageY;
+								
 								console.log("X: "+evt.stageX);
 								circleShape.graphics.beginFill("#000000").
-									drawRect(evt.stageX, evt.stageY,20,20);
+									drawRect(evt.stageX, evt.stageY,40,40);
 							}
 						},null, false, this);	
 					}
@@ -387,6 +395,11 @@
 		
 		
 		function tick(event) {
+			console.log(globalCircleShape);
+			if(globalCircleShape) {
+				globalCircleShape.graphics.beginFill("#FFFFFF").
+					drawRect(globalX, globalY, 40, 40);
+			}
 			app.circles.fetch({
 				success:	function(collection, response, options){
 					//	models in collection successfully loaded
@@ -399,6 +412,7 @@
 			stage.update(event); // important!!
 		}
 		
+		// Mouse handling
 		document.addEventListener("mousedown", function(e) {
 			isMouseUp = false;
 			//console.log(window.event);
