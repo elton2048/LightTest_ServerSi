@@ -82,7 +82,7 @@ var sizeWall_h = new b2Vec2(wallLength, wallWidth);
 //end
 
 // Obstacle setting
-wallBuilding(new b2Vec2(500, 60), new b2Vec2(wallWidth, 300), 0);
+wallBuilding(new b2Vec2(0, 0), new b2Vec2(0, 0), 0);
 
 /* 
    For building the mirror
@@ -90,7 +90,7 @@ wallBuilding(new b2Vec2(500, 60), new b2Vec2(wallWidth, 300), 0);
    Second parameter: Size
    Third parameter: Angle
 */
-mirrorBuilding(new b2Vec2(500, 500), new b2Vec2(10, 100), 90);
+//mirrorBuilding(new b2Vec2(500, 500), new b2Vec2(10, 100), 90);
 //end
 
 // Variable for Ray Cast
@@ -125,7 +125,7 @@ var wallPlace;
 function update() {
 	i++;
 	world.Step(1/60 ,10 ,10);
-	world.DrawDebugData();
+	//world.DrawDebugData();
 	raytest();
 
 	// Part to break the wall and recover
@@ -271,14 +271,14 @@ function raytest() {
 	intersectionPoint.y = initialPoint.y + closestFraction * (p2.y - initialPoint.y);
 
 	// For drawing the debug information in debug plant, delete if not used
-	debugDrawLine("rgb(255, 255, 255)", centerPoint.startPoint, centerPoint.intersectionPoint);
+	/*debugDrawLine("rgb(255, 255, 255)", centerPoint.startPoint, centerPoint.intersectionPoint);
 	debugDrawLine("orange", leftPoint.startPoint, leftPoint.intersectionPoint);
 	debugDrawLine("green", leftPoint.startPoint, rightPoint.startPoint);
 	debugDrawLine("orange", rightPoint.startPoint, rightPoint.intersectionPoint);
 	debugDrawLine("red", centerPoint.intersectionPoint, centerPoint.intersectionEnd);
 	debugDrawLine("red", leftPoint.intersectionPoint, leftPoint.intersectionEnd);
 	debugDrawLine("purple", centerPoint.intersectionPoint, centerPoint.normalEnd);
-	debugDrawLine("yellow", firstReflected.startPoint, firstReflected.reflectedEnd);
+	debugDrawLine("yellow", firstReflected.startPoint, firstReflected.reflectedEnd);*/
 	// End
 
 }
@@ -552,7 +552,7 @@ function rayReflection_v2(initial, final) {
 		// Calculate the angle between intersectionPoint and initialPoint
 		angleOfIntersection = angleOfTwoPoints(initial, initial, intersectionPoint);
 		/* console.log("Angle of intersection: " + angleOfIntersection); */
-		console.log(intersectionPoint);
+		//console.log(intersectionPoint);
 		// Set the one end is the vertex end of the shape
 		intersectionEnd = nearest_vertex_contact(intersectionPoint, rotated_vertex_array(targetBody));
 		//console.log(intersectionEnd);
@@ -610,8 +610,8 @@ function wallBuilding(startPoint, size) {
 
 function mirrorBuilding(startPoint, size, angle) {
 	var position = new b2Vec2();
-	position.x = startPoint.x + size.x;
-	position.y = startPoint.y + size.y;
+	position.x = startPoint.x + size.x / 2;
+	position.y = startPoint.y + size.y / 2;
 	
 	var mirror = new b2BodyDef;
 	mirror.type = b2Body.b2_staticBody;
@@ -621,7 +621,7 @@ function mirrorBuilding(startPoint, size, angle) {
 
 	var mirrorFix = new b2FixtureDef;
 	mirrorFix.shape = new b2PolygonShape;
-	mirrorFix.shape.SetAsBox(size.x, size.y);
+	mirrorFix.shape.SetAsBox(size.x / 2, size.y / 2);
 	
 	var mirrorWorld = world.CreateBody(mirror);
 	mirrorWorld.CreateFixture(mirrorFix);

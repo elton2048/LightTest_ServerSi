@@ -179,8 +179,8 @@
 					var st_tick=model.attributes.st_tick;
 					var st_pos_x=model.attributes.st_pos_x;
 					var st_pos_y=model.attributes.st_pos_y;
-					var pos_x=st_pos_x+vx*(currTick-st_tick)*deltaTimeSec;
-					var pos_y=st_pos_y+vy*(currTick-st_tick)*deltaTimeSec;
+					var pos_x=st_pos_x;
+					var pos_y=st_pos_y;
 					var radius = model.attributes.radius;
 					
 					var max_x = pos_x+radius;
@@ -275,13 +275,14 @@
 			{
 				if(app.circles.models[i].attributes.type="player")
 					playerid = i;
+			
 			}
 			var player = app.circles.models[playerid];
-			
+	
 			
 			if(String.fromCharCode(event.which)=="a" )
 			{
-				//Global Location of ball with radius (top side)
+				//Global Location of ball with radius (left side)
 				ballx = app.circles.models[playerid].attributes.st_pos_x+180;
 				bally = app.circles.models[playerid].attributes.st_pos_y+200;
 				var tempwall= new createjs.Graphics().beginFill("#EE6363")
@@ -294,7 +295,7 @@
 			}
 			else if(String.fromCharCode(event.which)=="d" )
 			{
-				//Global Location of ball with radius (top side)
+				//Global Location of ball with radius (right side)
 				ballx = app.circles.models[playerid].attributes.st_pos_x+215;
 				bally = app.circles.models[playerid].attributes.st_pos_y+200;
 				var tempwall= new createjs.Graphics().beginFill("#EE6363")
@@ -321,7 +322,7 @@
 			}
 			else if(String.fromCharCode(event.which)=="s" )
 			{
-				//Global Location of ball with radius (top side)
+				//Global Location of ball with radius (bottom side)
 				ballx = app.circles.models[playerid].attributes.st_pos_x+200;
 				bally = app.circles.models[playerid].attributes.st_pos_y+215;
 				var tempwall= new createjs.Graphics().beginFill("#EE6363")
@@ -353,7 +354,8 @@
 										wait:	true									
 									}
 									);	
-			}					
+			}
+			app.stage.update;						
 		},null, false, this);
 		
 				
@@ -619,7 +621,7 @@
 										{
 											circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 											circleShape.graphics.beginFill(this.model.get("color")).
-												drawCircle(this.model.get("st_pos_x"), this.model.get("st_pos_y"), this.model.get("width")/2);
+												drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
 										}
 										
 										container.addChild(circleShape);

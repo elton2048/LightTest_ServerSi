@@ -30,9 +30,21 @@
 		var server_error_status=false;
 		var one_circle, view;
 		var stage = new createjs.Stage("CirclesCanvas");
+		// counting tick number
+		var timeCount = 0;
+		// the hole infomations
+		var createX = 0;
+		var createY = 0;
+		var createSizeX = 0;
+		var createSizeY = 0;
+		// the time the hole created
+		var createTime = 0;
+		// the global circle shape
+		var cscscs;
+		//boolean to control not more that one hole
+		var digging = false;
 		
-		
-		
+		var line = new createjs.Shape();
 		//	create a background
 		var background_graphics = new createjs.Graphics().beginFill("#000000")
 			.drawRect(0,0,$("#CirclesCanvas").width(),$("#CirclesCanvas").height());
@@ -44,11 +56,6 @@
 			.drawRect(465,50,70,40);
 		var rubbishbin = new createjs.Shape(rubbishbin_graphics);
 		stage.addChild(rubbishbin);
-
-		var globalCircleShape;
-		var globalX;
-		var globalY;
-		
 		
 		$(document).keypress(function(event){
 			
@@ -57,6 +64,7 @@
 			var tempwall = new Array();	
 			var hitornot = 0;
 			var player;
+
 			for(var i=0;i<app.circles.models.length;i++)
 			{
 				if(app.circles.models[i].attributes.type=="Player")
@@ -155,7 +163,7 @@
 			var socket = io.connect();	//	establish a websocket connection with server
 			Backbone.socket=socket;		//	Backbone.sync use this socket connection to sync with the server
 			createjs.Ticker.on("tick", tick);
-			createjs.Ticker.setFPS(2000);
+			createjs.Ticker.setFPS(200);
 			Backbone.$ = $;				//	let Backbone to use the current jQuery library
 			app.models.OneCircle = Backbone.Model.extend( {
 				default: 	{	
@@ -275,18 +283,36 @@
 					{
 						//circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						//circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
-						console.log("test");
 						wallBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")));
 						circleShape.on("pressup",function(evt,view) {
-							// Right click to show the break
-							if(evt.nativeEvent.which == 3) {
-								globalCircleShape = circleShape;
-								globalX = evt.stageX;
-								globalY = evt.stageY;
-								
+							// Right click
+							if(evt.nativeEvent.which == 3 && digging == false) {
+								digging = true;
+								drawx=0;
+								drawy=0;
 								console.log("X: "+evt.stageX);
-								circleShape.graphics.beginFill("#000000").
-									drawRect(evt.stageX, evt.stageY,40,40);
+								console.log(view.model.attributes);
+								if(view.model.attributes.height==10)
+								{
+									drawy=view.model.attributes.pos_y;
+									circleShape.graphics.beginFill("#000000").drawRect(evt.stageX-10, drawy,20,10);
+									createSizeX = 20;
+									createSizeY = 10;
+									createX = evt.stageX-10;
+									createY = drawy;
+								}
+								else
+								if(view.model.attributes.width==10)
+								{
+									drawx=view.model.attributes.pos_x;
+									circleShape.graphics.beginFill("#000000").drawRect(drawx, evt.stageY-10,10,20);
+									createSizeX = 10;
+									createSizeY = 20;
+									createY = evt.stageY-10;
+									createX = drawx;
+								}
+								cscscs = circleShape;
+								createTime = timeCount;
 							}
 						},null, false, this);	
 					}
@@ -300,7 +326,12 @@
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
-					};
+					}
+					else if(this.model.get("type")=="Mirror")
+					{
+						mirrorBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")),0);
+						console.log("M");
+					};	
 					stage.update();
 					//					console.log("render");
 					
@@ -314,18 +345,16 @@
 					} else
 					{	
 						circleShape=this.model.circleShape=new createjs.Shape();
-						stage.addChild(circleShape);
-						
-						
-						
-					}
+						stage.addChild(circleShape);					
+					}			
+					
 					if(this.model.get("type")=="circle")
 					{
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
 					}
-					else if(this.model.get("type")=="Wall")
+					else if(this.model.get("type")=="Wall" || this.model.get("type")=="Mirror")
 					{
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
@@ -341,7 +370,7 @@
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
-					};
+					};					
 					stage.update();
 					//					console.log("render");
 				}
@@ -393,12 +422,33 @@
 			});
 		});
 		
-		
 		function tick(event) {
-			console.log(globalCircleShape);
-			if(globalCircleShape) {
-				globalCircleShape.graphics.beginFill("#FFFFFF").
-					drawRect(globalX, globalY, 40, 40);
+			timeCount++;
+			
+			stage.addChild(line);					
+
+			lightStartX = centerPoint.startPoint.x;
+			lightStartY = centerPoint.startPoint.y;
+			lightEndX = centerPoint.intersectionPoint.x;
+			lightEndY = centerPoint.intersectionPoint.y;
+			lightReflectEndX = centerPoint.reflectedEnd.x;
+			lightReflectEndY = centerPoint.reflectedEnd.y;
+			
+			if(digging)
+			{
+				line.graphics.clear();
+				line.graphics.setStrokeStyle(10);
+				line.graphics.beginStroke("#FFD700");
+				line.graphics.moveTo(lightStartX,lightStartY);
+				line.graphics.lineTo(lightEndX,lightEndY);
+				line.graphics.lineTo(lightReflectEndX,lightReflectEndY);
+				line.graphics.endStroke();
+			}
+			if(createTime!=0 && timeCount-createTime==250)
+			{
+				digging = false;
+				line.graphics.clear();
+				cscscs.graphics.beginFill("#8B4726").drawRect(createX, createY,createSizeX,createSizeY);
 			}
 			app.circles.fetch({
 				success:	function(collection, response, options){
@@ -412,7 +462,6 @@
 			stage.update(event); // important!!
 		}
 		
-		// Mouse handling
 		document.addEventListener("mousedown", function(e) {
 			isMouseUp = false;
 			//console.log(window.event);
@@ -427,12 +476,14 @@
 					p2 = added_vertex(tempPoint, initialPoint);
 					//p2.x = e.layerX;
 					//p2.y = e.layerY; 
+					line.graphics.clear();
 					
 					break;
 					// Middle click
 				case 2:
 					initialPoint.x = e.layerX;
 					initialPoint.y = e.layerY;
+					line.graphics.clear();
 					break;
 					// Right click
 				case 3:
