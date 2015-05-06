@@ -45,11 +45,26 @@
 		var digging = false;
 		// A Shape to draw  light line
 		var line = new createjs.Shape();
+		// A start point of the light
+		var startLight = new createjs.Shape();
+		// spotlight around player
+		var spotLight = new createjs.Shape();
+		// mirror drawaing
+		var mirrorDraw = new createjs.Shape();
+
 		//	create a background
 		var background_graphics = new createjs.Graphics().beginFill("#000000")
 			.drawRect(0,0,$("#CirclesCanvas").width(),$("#CirclesCanvas").height());
 		var background = new createjs.Shape(background_graphics);
 		stage.addChild(background);
+		var cacheFlag = false;
+		var leftClick = false;
+		// Array to store the wall point;
+		var wallArea = [];
+		var playerPosX = 0;
+		var playerPosY = 0;
+		var playerWidth = 0;
+		var playerInLine = false;
 		
 		//create a rubbish bin for deleting circles, on the lower right corner of the stage
 		var rubbishbin_graphics = new createjs.Graphics().beginFill("#EE6363")
@@ -88,77 +103,75 @@
 					wallindex++;
 				}
 			}
-			
-			/*************************Move Left********************/
-			if(String.fromCharCode(event.which)=="a")
+			if(playerInLine)
 			{
-				tempx = app.circles.models[playerid].attributes.pos_x-5 - player.attributes.width/2;
-				for(var i=0;i<tempwall.length;i++)
+				/*************************Move Left********************/
+				if(String.fromCharCode(event.which)=="a")
 				{
-					var hit = tempwall[i].hitTest(tempx,player.attributes.pos_y)
-						if(hit)
-						hitornot = true;
-				}
-				if(!hitornot)
-					app.circles.models[playerid].attributes.pos_x-=5;
-			}
-			/*************************Move Right********************/
-			else if(String.fromCharCode(event.which)=="d")
-			{
-				tempx = app.circles.models[playerid].attributes.pos_x + player.attributes.width/2;
-				for(var i=0;i<tempwall.length;i++)
-				{
-					var hit = tempwall[i].hitTest(tempx,player.attributes.pos_y)
-						if(hit)
-						hitornot = true;
-				}
-				if(!hitornot)
-					app.circles.models[playerid].attributes.pos_x+=5;
-			}
-			/*************************Move Upward********************/
-			else if(String.fromCharCode(event.which)=="w")
-			{
-				tempy = app.circles.models[playerid].attributes.pos_y-5 - player.attributes.width/2;
-				for(var i=0;i<tempwall.length;i++)
-				{
-					var hit = tempwall[i].hitTest(player.attributes.pos_x,tempy)
-						if(hit)
-						hitornot = true;
-				}
-				if(!hitornot)
-					app.circles.models[playerid].attributes.pos_y-=5;
-			}
-			/*************************Move Downward********************/
-			else if(String.fromCharCode(event.which)=="s")
-			{
-				tempy = app.circles.models[playerid].attributes.pos_y + player.attributes.width/2;
-				for(var i=0;i<tempwall.length;i++)
-				{
-					var hit = tempwall[i].hitTest(player.attributes.pos_x,tempy)
-						if(hit)
-						hitornot = true;
-				}
-				if(!hitornot)
-					app.circles.models[playerid].attributes.pos_y+=5;
-			}
-			_pos_x = app.circles.models[playerid].attributes.pos_x;
-			_pos_y = app.circles.models[playerid].attributes.pos_y;
-			/***************************************************************Save back the position to server*****************************************************************/
-			if(String.fromCharCode(event.which)=="a"||String.fromCharCode(event.which)=="s"||String.fromCharCode(event.which)=="d"||String.fromCharCode(event.which)=="w")
-			{
-				app.circles.models[playerid].save( {pos_x: _pos_x, pos_y: _pos_y},
-					{	success:	function(model,response,options){
-						console.log("successfully saved model, id="+model.id);
-					},
-						error: 		function(model,response,options){
-							//	not successful in save
-							//	model is not changed, as "wait"=true
-							console.log("failed in saving model, id="+model.id+" error="+response.errmsg);
-						},
-						view:	this,
-						wait:	true									
+					tempx = app.circles.models[playerid].attributes.pos_x-5 - player.attributes.width/2;
+					for(var i=0;i<tempwall.length;i++)
+					{
+						var hit = tempwall[i].hitTest(tempx,player.attributes.pos_y)
+							if(hit) hitornot = true;
 					}
-				);	
+					if(!hitornot)
+						app.circles.models[playerid].attributes.pos_x-=5;
+				}
+				/*************************Move Right********************/
+				else if(String.fromCharCode(event.which)=="d")
+				{
+					tempx = app.circles.models[playerid].attributes.pos_x + player.attributes.width/2;
+					for(var i=0;i<tempwall.length;i++)
+					{
+						var hit = tempwall[i].hitTest(tempx,player.attributes.pos_y)
+							if(hit) hitornot = true;
+					}
+					if(!hitornot)
+						app.circles.models[playerid].attributes.pos_x+=5;
+				}
+				/*************************Move Upward********************/
+				else if(String.fromCharCode(event.which)=="w")
+				{
+					tempy = app.circles.models[playerid].attributes.pos_y-5 - player.attributes.width/2;
+					for(var i=0;i<tempwall.length;i++)
+					{
+						var hit = tempwall[i].hitTest(player.attributes.pos_x,tempy)
+							if(hit) hitornot = true;
+					}
+					if(!hitornot)
+						app.circles.models[playerid].attributes.pos_y-=5;
+				}
+				/*************************Move Downward********************/
+				else if(String.fromCharCode(event.which)=="s")
+				{
+					tempy = app.circles.models[playerid].attributes.pos_y + player.attributes.width/2;
+					for(var i=0;i<tempwall.length;i++)
+					{
+						var hit = tempwall[i].hitTest(player.attributes.pos_x,tempy)
+							if(hit) hitornot = true;
+					}
+					if(!hitornot)
+						app.circles.models[playerid].attributes.pos_y+=5;
+				}
+				_pos_x = app.circles.models[playerid].attributes.pos_x;
+				_pos_y = app.circles.models[playerid].attributes.pos_y;
+				/***************************************************************Save back the position to server*****************************************************************/
+				if(String.fromCharCode(event.which)=="a"||String.fromCharCode(event.which)=="s"||String.fromCharCode(event.which)=="d"||String.fromCharCode(event.which)=="w")
+				{
+					app.circles.models[playerid].save( {pos_x: _pos_x, pos_y: _pos_y},
+						{	success:	function(model,response,options){
+							console.log("successfully saved model, id="+model.id);
+						},
+							error: 		function(model,response,options){
+								//	not successful in save
+								//	model is not changed, as "wait"=true
+								console.log("failed in saving model, id="+model.id+" error="+response.errmsg);
+							},
+							view:	this,
+							wait:	true									
+						}
+					);	
+				}
 			}
 		},null, false, this);
 		
@@ -176,6 +189,10 @@
 			createjs.Ticker.on("tick", tick);
 			// Setting the FPS of tick
 			createjs.Ticker.setFPS(200);
+			// Draw the start light at the beginning.
+			startLight.graphics.beginFill("#FFD755").drawCircle(initialPoint.x, initialPoint.y, 10);
+			stage.addChild(startLight);	// add the shape to the stage
+
 			Backbone.$ = $;				//	let Backbone to use the current jQuery library
 			app.models.OneCircle = Backbone.Model.extend( {
 				default: 	{	
@@ -232,7 +249,6 @@
 			app.views.OneCircleView = Backbone.View.extend(	{
 				
 				initialize: function() {
-					this.drawPhysics();
 					//	handle update on model as informed by server 
 					_.bindAll(this,"on_server_update_model");
 					this.model.ioBind("update",this.on_server_update_model,this);
@@ -247,6 +263,7 @@
 					this.listenTo(this.model, "change", this.render);
 					this.listenTo(this.model, "add", this.render);
 					this.render();
+					this.drawPhysics();
 				},
 				
 				on_server_destroy_model:	function(data){
@@ -291,31 +308,34 @@
 						//circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						//circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
 						wallBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")));
+						wallArea.push(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")));
+
+						// Mouse action for the object
 						circleShape.on("pressup",function(evt,view) {
 							// Right click
 							if(evt.nativeEvent.which == 3 && digging == false) {
 								digging = true;
 								drawx=0;
 								drawy=0;
-								console.log("X: "+evt.stageX);
-								console.log(view.model.attributes);
+								//console.log("X: "+evt.stageX);
+								//console.log(view.model.attributes);
 								if(view.model.attributes.height==10)
 								{
 									drawy=view.model.attributes.pos_y;
-									circleShape.graphics.beginFill("#000000").drawRect(evt.stageX-10, drawy,20,10);
-									createSizeX = 20;
+									circleShape.graphics.beginFill("#000000").drawRect(evt.stageX - wallSpace / 2, drawy, wallSpace * 1.5, 10);
+									createSizeX = wallSpace * 1.5;
 									createSizeY = 10;
-									createX = evt.stageX-10;
+									createX = evt.stageX - wallSpace / 2;
 									createY = drawy;
 								}
 								else
 								if(view.model.attributes.width==10)
 								{
 									drawx=view.model.attributes.pos_x;
-									circleShape.graphics.beginFill("#000000").drawRect(drawx, evt.stageY-10,10,20);
+									circleShape.graphics.beginFill("#000000").drawRect(drawx, evt.stageY - wallSpace / 2,10, wallSpace * 1.5);
 									createSizeX = 10;
-									createSizeY = 20;
-									createY = evt.stageY-10;
+									createSizeY = wallSpace * 1.5;
+									createY = evt.stageY - wallSpace / 2;
 									createX = drawx;
 								}
 								cscscs = circleShape;
@@ -342,12 +362,16 @@
 				/*********************************************************************Render the component from server********************************************************/
 				render:	function()	{
 					var circleShape;
+					//spotLight.graphics.beginFill("#00FF00").drawCircle(0, 0, 100);
+					//stage.addChild(spotLight);
 					if (this.model.circleShape!=null)
-					{	circleShape=this.model.circleShape;
-					} else
+					{	
+						circleShape=this.model.circleShape;
+					} 
+					else
 					{	
 						circleShape=this.model.circleShape=new createjs.Shape();
-						stage.addChild(circleShape);					
+						stage.addChild(circleShape);
 					}			
 					// render for each type of components
 					if(this.model.get("type")=="circle")
@@ -356,11 +380,17 @@
 						circleShape.graphics.beginFill(this.model.get("color")).
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
 					}
-					else if(this.model.get("type")=="Wall" || this.model.get("type")=="Mirror")
+					else if(this.model.get("type")=="Wall")
 					{
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
 						//wallBuilding(new b2Vec2(this.model.get("pos_x"), this.model.get("pos_y")), new b2Vec2(this.model.get("width"), this.model.get("height")));
+					}
+					else if(this.model.get("type")=="Mirror")
+					{
+						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
+						circleShape.graphics.beginFill(this.model.get("color")).drawRect(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width"),this.model.get("height"));
+						/* circleShape.alpha = 0; */
 					}
 					else if(this.model.get("type")=="triangle")
 					{
@@ -369,10 +399,20 @@
 					}
 					else if(this.model.get("type")=="Player")
 					{
+						spotLight.graphics.clear();
+						spotLight.filters =[new createjs.ColorFilter(1,1,1,0.5,0,0,0,0),
+						new createjs.BlurFilter(3,3,10),];
+						playerPosX = this.model.get("pos_x");
+						playerPosY = this.model.get("pos_y");
+						playerWidth = this.model.get("width")/2;
+						spotLight.graphics.beginFill("#FFD700").
+						drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")*1.1);
+						spotLight.cache(this.model.get("pos_x") - this.model.get("width"), this.model.get("pos_y") - this.model.get("width"), 60, 60);
+						stage.addChild(spotLight);	
 						circleShape.graphics.clear();	//	remove all previous graphics instructions on this Shape
 						circleShape.graphics.beginFill(this.model.get("color")).
 							drawCircle(this.model.get("pos_x"), this.model.get("pos_y"), this.model.get("width")/2);
-					};					
+					};
 					stage.update();
 				}
 			}
@@ -422,41 +462,145 @@
 				}
 			});
 		});
+		function init() {
+
+			stage.update();
+		}
 		function tick(event) {
 			timeCount++; // Timer
 			stage.addChild(line);	// add the shape to the stage
-			
+			stage.addChild(mirrorDraw);	// add the shape to the stage
+
 			
 			/*******************Get all the points on light*********************/
 			lightStartX = centerPoint.startPoint.x;
 			lightStartY = centerPoint.startPoint.y;
 			lightEndX = centerPoint.intersectionPoint.x;
 			lightEndY = centerPoint.intersectionPoint.y;
-			lightReflectEndX = centerPoint.reflectedEnd.x;
-			lightReflectEndY = centerPoint.reflectedEnd.y;
+
+			if(centerPoint.reflectedEnd.x > 900)
+				lightReflectEndX = 900;
+			else
+				lightReflectEndX = centerPoint.reflectedEnd.x;
+			if(centerPoint.reflectedEnd.y < 110)
+				lightReflectEndY = 110;
+			else
+				lightReflectEndY = centerPoint.reflectedEnd.y;
 			/********************************************************************/
 			
-			
+			/*****************Testing PLayer In the light area*******************/
+			var Alive1 = line.hitTest(playerPosX,playerPosY);
+			var Alive2 = line.hitTest(playerPosX+playerWidth,playerPosY);
+			var Alive3 = line.hitTest(playerPosX-playerWidth,playerPosY);
+			var Alive4 = line.hitTest(playerPosX,playerPosY+playerWidth);
+			var Alive5 = line.hitTest(playerPosX,playerPosY-playerWidth);
+			if(Alive1||Alive2||Alive3||Alive4||Alive5)
+			{
+				console.log("InLine");
+				playerInLine = true;
+			}
+			else
+			{
+				playerInLine = false;
+			}
+				
+			/********************************************************************/		
+					
 			/***************Draw when dig a hole on a wall ****************/
 			if(digging)
 			{
 				line.graphics.clear();
-				line.graphics.setStrokeStyle(15);
+				line.graphics.setStrokeStyle(ray_width * 2);
 				line.graphics.beginStroke("#FFD700");
 				line.graphics.moveTo(lightStartX,lightStartY);
 				line.graphics.lineTo(lightEndX,lightEndY);
 				line.graphics.lineTo(lightReflectEndX,lightReflectEndY);
+
+				if(lightEndX != lightReflectEndX) {
+					mirrorDraw.graphics.clear();
+					mirrorDraw.graphics.setStrokeStyle(2);
+					mirrorDraw.graphics.beginStroke("#FFff00");
+					mirrorDraw.graphics.moveTo(lightEndX - 10,lightEndY);
+					mirrorDraw.graphics.lineTo(lightEndX + 10,lightEndY);
+					mirrorDraw.graphics.endStroke();
+				}
+				
+				if(cacheFlag==false)
+				{
+					line.filters =[
+						/* new createjs.ColorFilter(1,1,1,0.5,0,0,0,0), */
+						/* new createjs.BlurFilter(3,3,0.5), */
+					];
+					line.alpha = 0.5;
+					line.cache(0, 0, 1000, 800);
+					if(lightReflectEndX != lightEndX)
+						line.cache(0, 0, Math.abs(lightReflectEndX), Math.abs(lightEndY));
+					cacheFlag = true;
+				}
 				line.graphics.endStroke();
+
+				if(leftClick) {
+					line.uncache();
+					var cacheX;
+					var cacheY;
+					var cacheW;
+					var cacheH;
+
+					if(lightReflectEndX > lightEndX) {
+						if(lightReflectEndY > lightEndY){
+							cacheX = 0;
+							console.log(mirrorSize);
+							cacheY = (1000 + (2 * mirrorSize) - lightEndY);
+							cacheW = lightReflectEndX;
+							cacheH = lightEndY;
+						} else {
+							cacheX = cacheY = 0;
+							cacheW = lightReflectEndX;
+							cacheH = lightEndY;
+						}
+					} else if(lightReflectEndX < lightEndX) {
+						if(lightReflectEndY > lightEndY){
+							cacheX = lightReflectEndX - ray_width;
+							cacheY = (1000 + (2 * mirrorSize) - lightEndY);
+							cacheW = 1000 - lightReflectEndX;
+							cacheH = lightEndY;
+						} else {
+							cacheX = lightReflectEndX;
+							cacheY = 0;
+							cacheW = 1000 - lightReflectEndX;
+							cacheH = lightEndY;
+						}
+					} else {
+						cacheX = 0;
+						cacheY = 0;
+						cacheW = 1000;
+						cacheH = 800;
+					}
+					
+						console.log(cacheY);
+						console.log(lightEndY);
+					line.cache(cacheX, cacheY, cacheW, cacheH);
+					line.updateCache();
+				}
+				
 			}
 			/*********************************************************************/
-			
+			/* console.log(wallClosed); */
 			
 			/***************Count the time to repair and clear the light line****************/
-			if(createTime!=0 && timeCount-createTime==250)
+			/* if(createTime!=0 && timeCount-createTime==250) */
+			if(createTime!=0 && wallClosed)
 			{
 				digging = false;
+				//clear the line
 				line.graphics.clear();
+				mirrorDraw.graphics.clear();
+				//clear the filter?
+				line.updateCache();
+				cacheFlag = false;
 				cscscs.graphics.beginFill("#8B4726").drawRect(createX, createY,createSizeX,createSizeY);
+				createTime = 0;
+				timeCount = 0;
 			}
 			/***************************************************************************************/
 			
@@ -490,14 +634,31 @@
 					p2 = added_vertex(tempPoint, initialPoint);
 					//p2.x = e.layerX;
 					//p2.y = e.layerY; 
-					line.graphics.clear();
 					
+					console.log("test");
+					leftClick = true;
 					break;
 					// Middle click
 				case 2:
-					initialPoint.x = e.layerX;
-					initialPoint.y = e.layerY;
-					line.graphics.clear();
+					// Ensure the click is outside the wall.
+					if(e.layerX < wallArea[1].x || e.layerX > wallArea[2].x) {
+						console.log("true");
+						initialPoint.x = e.layerX;
+						initialPoint.y = e.layerY;
+					}
+					else if(e.layerY < wallArea[1].y || e.layerY > wallArea[3].y) {
+						console.log("true");
+						initialPoint.x = e.layerX;
+						initialPoint.y = e.layerY;
+					}
+					
+					/* line.graphics.clear(); */
+					cacheFlag = false;
+
+					// Redraw the start light
+					startLight.graphics.clear();
+					startLight.graphics.beginFill("#FFD755").drawCircle(initialPoint.x, initialPoint.y, 10);
+					stage.addChild(startLight);	// add the shape to the stage
 					break;
 					// Right click
 				case 3:
@@ -510,11 +671,12 @@
 					// Should not happen
 					break;
 			}
+			//line.updateCache();
 		});
 		
 		</script>
 		<script src="/js/Box2dWeb-2.1.a.3.js"></script>
-		<script src="/js/test1.js"></script>
+		<script src="/js/physics.js"></script>
 	</body>	
 	
 	
